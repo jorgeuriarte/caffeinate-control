@@ -14,7 +14,9 @@
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(git tag:*)",
-      "Bash(swift:*)"
+      "Bash(swift:*)",
+      "Bash(./build.sh:*)",
+      "Bash(zip:*)"
     ],
     "deny": []
   }

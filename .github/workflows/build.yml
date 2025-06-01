@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Permisos necesarios para crear releases
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -29,12 +34,12 @@ jobs:
     - name: 🔨 Build application
       run: |
         chmod +x build.sh
-        ./build.sh ${{ steps.get_version.outputs.VERSION }}
+        CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
         
-    - name: 📦 Create distributable ZIP
+    - name: 📦 Verify ZIP was created
       run: |
-        cd build
-        zip -r "CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip" CaffeinateControl.app
+        ls -la build/
+        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip"
         
     - name: 🧪 Test application
       run: |
@@ -71,9 +76,7 @@ jobs:
     - name: 🔨 Build application for release
       run: |
         chmod +x build.sh
-        ./build.sh ${{ steps.get_version.outputs.VERSION }}
-        cd build
-        zip -r "CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip" CaffeinateControl.app
+        CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
         
     - name: 📋 Generate release notes
       id: release_notes
@@ -110,7 +113,7 @@ jobs:
         EOF
         
     - name: 🚀 Create GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         name: "CaffeinateControl v${{ steps.get_version.outputs.VERSION }}"
         body_path: release_notes.md
@@ -118,5 +121,4 @@ jobs:
           build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
