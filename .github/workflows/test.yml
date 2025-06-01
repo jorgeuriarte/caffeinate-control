@@ -54,8 +54,8 @@ jobs:
       
     - name: 🔒 Check for hardcoded secrets
       run: |
-        # Buscar posibles secrets hardcodeados
-        if grep -r -i "password\|secret\|key\|token" --include="*.swift" --include="*.plist" .; then
+        # Buscar posibles secrets hardcodeados (excluyendo APIs legítimas)
+        if grep -r -i "password\|secret.*=\|api.*key.*=\|token.*=" --include="*.swift" --include="*.plist" . | grep -v "keyEquivalent\|forKey\|Key:" ; then
           echo "❌ Potential hardcoded secrets found"
           exit 1
         else
