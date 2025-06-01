@@ -16,7 +16,8 @@
       "Bash(git tag:*)",
       "Bash(swift:*)",
       "Bash(./build.sh:*)",
-      "Bash(zip:*)"
+      "Bash(zip:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

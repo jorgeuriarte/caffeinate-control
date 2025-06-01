@@ -92,7 +92,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let userFlag = NSMenuItem(title: "\u{2713} Declarar usuario activo (-u)", action: #selector(toggleUserActive), keyEquivalent: "")
         userFlag.target = self
-        userFlag.toolTip = "Enciende la pantalla si está apagada y declara actividad"
+        userFlag.toolTip = "Simula actividad del usuario (útil para demos/presentaciones)"
         menu.addItem(userFlag)
         
         menu.addItem(NSMenuItem.separator())
