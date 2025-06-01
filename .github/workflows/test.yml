@@ -1,0 +1,76 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  syntax-check:
+    runs-on: macos-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Swift syntax check
+      run: |
+        # Verificar sintaxis Swift
+        swiftc -typecheck main.swift -framework Cocoa -framework AVFoundation
+        echo "✅ Swift syntax is valid"
+        
+    - name: 🧪 Build test
+      run: |
+        chmod +x build.sh
+        ./build.sh
+        echo "✅ Build test passed"
+        
+    - name: 📋 Validate Info.plist
+      run: |
+        plutil -lint Info.plist
+        echo "✅ Info.plist is valid"
+        
+    - name: 🔍 Check executable permissions
+      run: |
+        test -x build.sh
+        echo "✅ Build script is executable"
+        
+    - name: 📦 Verify app bundle structure
+      run: |
+        test -d "build/CaffeinateControl.app"
+        test -d "build/CaffeinateControl.app/Contents"
+        test -d "build/CaffeinateControl.app/Contents/MacOS"
+        test -f "build/CaffeinateControl.app/Contents/MacOS/CaffeinateControl"
+        test -f "build/CaffeinateControl.app/Contents/Info.plist"
+        echo "✅ App bundle structure is correct"
+
+  security-check:
+    runs-on: macos-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔒 Check for hardcoded secrets
+      run: |
+        # Buscar posibles secrets hardcodeados
+        if grep -r -i "password\|secret\|key\|token" --include="*.swift" --include="*.plist" .; then
+          echo "❌ Potential hardcoded secrets found"
+          exit 1
+        else
+          echo "✅ No hardcoded secrets detected"
+        fi
+        
+    - name: 🛡️ Verify secure coding practices
+      run: |
+        # Verificar que no hay llamadas inseguras
+        if grep -r "system(" --include="*.swift" .; then
+          echo "⚠️ Warning: system() calls detected - review for security"
+        fi
+        
+        if grep -r "NSTask" --include="*.swift" .; then
+          echo "ℹ️ NSTask usage detected - ensure proper input validation"
+        fi
+        
+        echo "✅ Security check completed"

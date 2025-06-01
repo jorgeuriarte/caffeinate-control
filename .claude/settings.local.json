@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./build.sh)",
+      "Bash(open:*)",
+      "Bash(git init:*)",
+      "Bash(mkdir:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}
