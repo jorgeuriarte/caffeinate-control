@@ -12,7 +12,9 @@
       "Bash(git remote add:*)",
       "Bash(git push:*)",
       "Bash(gh run list:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(git tag:*)",
+      "Bash(swift:*)"
     ],
     "deny": []
   }

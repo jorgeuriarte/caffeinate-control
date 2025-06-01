@@ -368,19 +368,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func playAlarmSound() {
-        // Reproducir "tirurí-tirurí-tirurí"
+        // Reproducir "tirurí-tirurí-tirurí" con sonido del sistema
         DispatchQueue.global(qos: .background).async {
-            for _ in 0..<3 {
-                NSSound.beep()
-                Thread.sleep(forTimeInterval: 0.2)
-                NSSound.beep()
-                Thread.sleep(forTimeInterval: 0.3)
+            if let sound = NSSound(named: "Ping") {
+                for _ in 0..<3 {
+                    sound.play()
+                    Thread.sleep(forTimeInterval: 0.2)
+                    sound.play()
+                    Thread.sleep(forTimeInterval: 0.3)
+                }
             }
         }
     }
     
     private func playPipSound() {
-        NSSound.beep()
+        // Usar sonido más suave para los pips finales
+        if let sound = NSSound(named: "Pop") {
+            sound.play()
+        }
     }
     
     private func startFinalCountdown() {
