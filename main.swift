@@ -38,8 +38,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupStatusBar() {
+        // Usar longitud variable pero con límite compacto
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.menu = menu
+        
+        // Configurar el comportamiento del statusItem
+        if let button = statusItem.button {
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        }
+        
+        // Verificar visibilidad después de un pequeño delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.checkVisibility()
+        }
+    }
+    
+    private func checkVisibility() {
+        // Si el botón no tiene frame válido, probablemente no hay espacio
+        if let button = statusItem.button, button.frame.width == 0 {
+            showNoSpaceAlert()
+        }
+    }
+    
+    private func showNoSpaceAlert() {
+        let alert = NSAlert()
+        alert.messageText = "CaffeinateControl está ejecutándose"
+        alert.informativeText = "La barra de estado está llena. Puedes:\n\n• Cerrar otras apps de la barra\n• Mantener presionado ⌘ y arrastrar iconos fuera\n• La app sigue funcionando aunque no veas el icono"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     private func setupMenu() {
@@ -202,7 +229,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let remaining = endTime.timeIntervalSinceNow
                 let minutes = Int(remaining) / 60
                 let seconds = Int(remaining) % 60
-                statusItem.button?.title = "☕️ \(minutes):\(String(format: "%02d", seconds))"
+                // Formato más compacto: solo mostrar minutos si es menos de 10
+                if minutes < 10 {
+                    statusItem.button?.title = "☕\(minutes):\(String(format: "%02d", seconds))"
+                } else {
+                    statusItem.button?.title = "☕\(minutes)m"
+                }
             } else {
                 statusItem.button?.title = "☕️"
             }
