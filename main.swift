@@ -28,11 +28,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadSettings()
-        // Check and reset pmset on startup only if needed (silently)
+        // Always reset pmset on startup for safety
+        // This ensures we don't leave the system in a modified state
         if checkPmsetStatus() {
             print("Found pmset disablesleep enabled on startup, will attempt to reset")
-            // Try to disable silently, but don't force authentication
             disableLidSleepPreventionSilently()
+        } else if preventLidSleep {
+            // If pmset is not active but our setting says it should be, clear the setting
+            print("Clearing lid sleep prevention setting - pmset is not active")
+            preventLidSleep = false
+            saveSettings()
         }
         setupMenu()
         setupStatusBar()
@@ -658,11 +663,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             process.waitUntilExit()
             if process.terminationStatus == 0 {
                 print("Successfully reset pmset disablesleep on startup")
+                // Reset the UI state to match reality
+                preventLidSleep = false
+                // Update menu after a delay to ensure UI is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.updateMenuStates()
+                    self?.saveSettings()
+                }
             } else {
                 print("Note: Cannot reset pmset without admin privileges. Will prompt when user toggles the option.")
+                // If we couldn't reset, also clear the checkbox since it's not actually active
+                preventLidSleep = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.updateMenuStates()
+                    self?.saveSettings()
+                }
             }
         } catch {
             print("Note: Cannot reset pmset on startup without admin privileges")
+            // Clear the checkbox on error too
+            preventLidSleep = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.updateMenuStates()
+                self?.saveSettings()
+            }
         }
     }
 
