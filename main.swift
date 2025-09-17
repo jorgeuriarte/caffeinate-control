@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var preventDiskSleep: Bool = false     // -m
     private var preventSystemSleep: Bool = false   // -s
     private var declareUserActive: Bool = false    // -u
+    private var preventLidSleep: Bool = false       // Control pmset disablesleep
     private var alarmEnabled: Bool = false          // Alarma de finalización
     
     // Variables para el sistema de alarmas
@@ -26,6 +27,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadSettings()
+        // Check and reset pmset on startup only if needed (silently)
+        if checkPmsetStatus() {
+            print("Found pmset disablesleep enabled on startup, will attempt to reset")
+            // Try to disable silently, but don't force authentication
+            disableLidSleepPreventionSilently()
+        }
         setupMenu()
         setupStatusBar()
         updateStatusIcon()
@@ -34,6 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         stopCaffeinate()
+        // Ensure pmset is reset on termination
+        disableLidSleepPrevention()
         saveSettings()
     }
     
@@ -121,7 +130,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         userFlag.target = self
         userFlag.toolTip = "Simula actividad del usuario (útil para demos/presentaciones)"
         menu.addItem(userFlag)
-        
+
+        let lidSleepFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión al cerrar tapa", action: #selector(toggleLidSleep), keyEquivalent: "")
+        lidSleepFlag.target = self
+        lidSleepFlag.toolTip = "Evita que el Mac se suspenda al cerrar la tapa (requiere contraseña de admin)"
+        menu.addItem(lidSleepFlag)
+
         menu.addItem(NSMenuItem.separator())
         
         let alarmFlag = NSMenuItem(title: "\u{2713} Alarma de finalización", action: #selector(toggleAlarm), keyEquivalent: "")
@@ -194,6 +208,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             resetAlarmStates()
             updateStatusIcon()
             startTimer()
+
+            // Enable lid sleep prevention if configured
+            if preventLidSleep {
+                enableLidSleepPrevention()
+            }
         } catch {
             print("Error starting caffeinate: \(error)")
         }
@@ -210,6 +229,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon()
         stopTimer()
         stopFinalCountdown()
+
+        // Disable lid sleep prevention when stopping caffeinate
+        if preventLidSleep {
+            disableLidSleepPrevention()
+        }
     }
     
     private func startTimer() {
@@ -313,6 +337,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuStates()
         saveSettings()
     }
+
+    @objc private func toggleLidSleep() {
+        preventLidSleep.toggle()
+        updateMenuStates()
+        saveSettings()
+
+        // Apply or remove pmset setting immediately if caffeinate is active
+        if isActive {
+            if preventLidSleep {
+                enableLidSleepPrevention()
+            } else {
+                disableLidSleepPrevention()
+            }
+        }
+    }
     
     @objc private func toggleAlarm() {
         alarmEnabled.toggle()
@@ -335,7 +374,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 item.state = preventSystemSleep ? .on : .off
             case 10: // User active flag
                 item.state = declareUserActive ? .on : .off
-            case 12: // Alarm flag
+            case 11: // Lid sleep flag
+                item.state = preventLidSleep ? .on : .off
+            case 13: // Alarm flag
                 item.state = alarmEnabled ? .on : .off
             default:
                 break
@@ -352,6 +393,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         preventDiskSleep = defaults.bool(forKey: "preventDiskSleep")
         preventSystemSleep = defaults.bool(forKey: "preventSystemSleep")
         declareUserActive = defaults.bool(forKey: "declareUserActive")
+        preventLidSleep = defaults.bool(forKey: "preventLidSleep")
         alarmEnabled = defaults.bool(forKey: "alarmEnabled")
         selectedDuration = defaults.double(forKey: "selectedDuration")
         if selectedDuration == 0 { selectedDuration = 3600 } // Por defecto 1 hora
@@ -364,6 +406,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.set(preventDiskSleep, forKey: "preventDiskSleep")
         defaults.set(preventSystemSleep, forKey: "preventSystemSleep")
         defaults.set(declareUserActive, forKey: "declareUserActive")
+        defaults.set(preventLidSleep, forKey: "preventLidSleep")
         defaults.set(alarmEnabled, forKey: "alarmEnabled")
         defaults.set(selectedDuration, forKey: "selectedDuration")
     }
@@ -437,7 +480,152 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         finalCountdownTimer?.invalidate()
         finalCountdownTimer = nil
     }
-    
+
+    // MARK: - Pmset Control for Lid Sleep Prevention
+
+    private func checkPmsetStatus() -> Bool {
+        // Check current pmset disablesleep status
+        let process = Process()
+        process.launchPath = "/usr/bin/pmset"
+        process.arguments = ["-g"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                // Check if disablesleep is set to 1
+                return output.contains("disablesleep") && output.contains("1")
+            }
+        } catch {
+            print("Failed to check pmset status: \(error)")
+        }
+        return false
+    }
+
+    private func enableLidSleepPrevention() {
+        // First check if already enabled
+        if checkPmsetStatus() {
+            print("Lid sleep prevention already enabled")
+            return
+        }
+
+        // Create an AppleScript that requests admin privileges
+        let appleScript = """
+            do shell script "pmset -a disablesleep 1" with administrator privileges
+        """
+
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: appleScript) {
+            _ = scriptObject.executeAndReturnError(&error)
+
+            if let error = error {
+                let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
+                let errorNumber = error["NSAppleScriptErrorNumber"] as? Int ?? -1
+
+                // Error -128 means user cancelled
+                if errorNumber == -128 {
+                    print("User cancelled admin authentication for lid sleep prevention")
+                    // Reset the toggle since user cancelled
+                    preventLidSleep = false
+                    updateMenuStates()
+                    saveSettings()
+                } else {
+                    print("Failed to enable lid sleep prevention: \(errorMessage)")
+                    showPmsetError(message: "No se pudo activar la prevención de suspensión al cerrar la tapa",
+                                   details: errorMessage)
+                    // Reset the toggle on error
+                    preventLidSleep = false
+                    updateMenuStates()
+                    saveSettings()
+                }
+            } else {
+                print("Lid sleep prevention enabled successfully")
+                // Verify it was actually set
+                if !checkPmsetStatus() {
+                    print("Warning: pmset command executed but status verification failed")
+                }
+            }
+        }
+    }
+
+    private func disableLidSleepPrevention() {
+        // Only try to disable if it's currently enabled
+        if !checkPmsetStatus() {
+            print("Lid sleep prevention already disabled")
+            return
+        }
+
+        // Create an AppleScript that requests admin privileges
+        let appleScript = """
+            do shell script "pmset -a disablesleep 0" with administrator privileges
+        """
+
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: appleScript) {
+            _ = scriptObject.executeAndReturnError(&error)
+
+            if let error = error {
+                let errorNumber = error["NSAppleScriptErrorNumber"] as? Int ?? -1
+
+                // Error -128 means user cancelled, which is ok for disable
+                if errorNumber == -128 {
+                    print("User cancelled admin authentication for disabling lid sleep prevention")
+                    // Don't show error for cancellation on disable
+                } else {
+                    let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
+                    print("Failed to disable lid sleep prevention: \(errorMessage)")
+                    // We don't show error dialog on disable failures to avoid annoying the user
+                }
+            } else {
+                print("Lid sleep prevention disabled successfully")
+            }
+        }
+    }
+
+    private func disableLidSleepPreventionSilently() {
+        // Silent version that doesn't prompt for password - used on startup
+        // If we can't disable without password, we just log it and move on
+        let process = Process()
+        process.launchPath = "/usr/bin/pmset"
+        process.arguments = ["-a", "disablesleep", "0"]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                print("Successfully reset pmset disablesleep on startup")
+            } else {
+                print("Note: Cannot reset pmset without admin privileges. Will prompt when user toggles the option.")
+            }
+        } catch {
+            print("Note: Cannot reset pmset on startup without admin privileges")
+        }
+    }
+
+    private func showPmsetError(message: String, details: String) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.informativeText = """
+            Error: \(details)
+
+            Nota: Esta función requiere privilegios de administrador.
+            Si continúa teniendo problemas, puede ejecutar manualmente en Terminal:
+
+            Para activar: sudo pmset -a disablesleep 1
+            Para desactivar: sudo pmset -a disablesleep 0
+            """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+    }
+
     @objc private func quit() {
         stopCaffeinate()
         NSApplication.shared.terminate(nil)

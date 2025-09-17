@@ -12,11 +12,12 @@ Una aplicación de barra de estado para macOS que proporciona control visual y a
 ## ✨ Características
 
 - **🎯 Control Visual**: Icono en barra de estado con contador en tiempo real
-- **⏰ Múltiples Duraciones**: 15min, 30min, 1h, 2h 
+- **⏰ Múltiples Duraciones**: 15min, 30min, 1h, 2h
 - **🔧 Flags Configurables**: Control granular de suspensión (pantalla, sistema, disco, etc.)
 - **🔔 Alarmas**: Notificaciones sonoras al 10%, 5% y últimos 10 segundos
 - **💾 Persistencia**: Recuerda tu configuración entre sesiones
 - **🌙 Modo Oscuro**: Se adapta automáticamente al tema del sistema
+- **💻 Prevención de Suspensión con Tapa Cerrada**: Evita que el Mac se suspenda al cerrar la tapa (usando `pmset disablesleep`)
 
 ## 🚀 Instalación Rápida
 
@@ -35,6 +36,12 @@ open build/CaffeinateControl.app
 
 ## 📖 Uso
 
+### ⚠️ Nota Importante sobre Prevención de Suspensión con Tapa Cerrada
+- Esta función utiliza `pmset disablesleep` que requiere privilegios de administrador
+- Se te pedirá tu contraseña de administrador cuando actives esta opción
+- La configuración se **resetea automáticamente** al iniciar la app para evitar dejar el sistema permanentemente sin suspensión
+- La configuración también se desactiva automáticamente cuando detienes Caffeinate o cierras la aplicación
+
 ### Iconos de Estado
 - **☕️** (normal): Activo con contador de tiempo
 - **☕️** (gris): Inactivo
@@ -49,6 +56,7 @@ open build/CaffeinateControl.app
 - **-m**: Prevenir suspensión de disco
 - **-s**: Prevenir suspensión del sistema (solo con AC conectado)
 - **-u**: Declarar usuario activo (enciende pantalla)
+- **Prevenir suspensión al cerrar tapa**: Evita que el Mac se suspenda al cerrar la tapa (requiere contraseña de admin)
 
 ## 🔧 Desarrollo
 
