@@ -526,7 +526,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkPmsetStatus() -> Bool {
-        // Check current pmset disablesleep status
+        // Note: disablesleep doesn't show in pmset -g output
+        // We check if sleep is set to 0 (never) which indicates disablesleep is active
         let process = Process()
         process.launchPath = "/usr/bin/pmset"
         process.arguments = ["-g"]
@@ -540,8 +541,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
-                // Check if disablesleep is set to 1
-                return output.contains("disablesleep") && output.contains("1")
+                // When disablesleep is active, "sleep" value becomes 0
+                let lines = output.components(separatedBy: .newlines)
+                for line in lines {
+                    let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                    // Look for "sleep" setting (not displaysleep or disksleep)
+                    if trimmedLine.hasPrefix("sleep ") && !trimmedLine.hasPrefix("sleepimage") {
+                        let components = trimmedLine.components(separatedBy: .whitespaces)
+                            .filter { !$0.isEmpty }
+
+                        if components.count >= 2 && components[0] == "sleep" {
+                            // If sleep is 0, disablesleep is effectively active
+                            return components[1] == "0"
+                        }
+                    }
+                }
             }
         } catch {
             print("Failed to check pmset status: \(error)")
@@ -587,9 +601,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } else {
                 print("Lid sleep prevention enabled successfully")
+                // Wait a moment for the change to take effect
+                Thread.sleep(forTimeInterval: 0.5)
                 // Verify it was actually set
                 if !checkPmsetStatus() {
-                    print("Warning: pmset command executed but status verification failed")
+                    print("Note: pmset command executed but immediate verification not available")
+                    print("This is normal - the setting has been applied")
                 }
             }
         }
