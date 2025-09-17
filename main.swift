@@ -105,40 +105,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         configTitle.isEnabled = false
         menu.addItem(configTitle)
         
-        let displayFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión de pantalla (-d)", action: #selector(toggleDisplaySleep), keyEquivalent: "")
+        let displayFlag = NSMenuItem(title: "Prevenir suspensión de pantalla (-d)", action: #selector(toggleDisplaySleep), keyEquivalent: "")
         displayFlag.target = self
         displayFlag.toolTip = "Evita que la pantalla se apague (ideal para presentaciones)"
         menu.addItem(displayFlag)
-        
-        let idleFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión por inactividad (-i)", action: #selector(toggleIdleSleep), keyEquivalent: "")
+
+        let idleFlag = NSMenuItem(title: "Prevenir suspensión por inactividad (-i)", action: #selector(toggleIdleSleep), keyEquivalent: "")
         idleFlag.target = self
         idleFlag.toolTip = "Evita que el sistema se suspenda por inactividad (recomendado)"
         idleFlag.state = .on
         menu.addItem(idleFlag)
-        
-        let diskFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión de disco (-m)", action: #selector(toggleDiskSleep), keyEquivalent: "")
+
+        let diskFlag = NSMenuItem(title: "Prevenir suspensión de disco (-m)", action: #selector(toggleDiskSleep), keyEquivalent: "")
         diskFlag.target = self
         diskFlag.toolTip = "Evita que el disco duro se suspenda"
         menu.addItem(diskFlag)
-        
-        let systemFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión del sistema (-s)", action: #selector(toggleSystemSleep), keyEquivalent: "")
+
+        let systemFlag = NSMenuItem(title: "Prevenir suspensión del sistema (-s)", action: #selector(toggleSystemSleep), keyEquivalent: "")
         systemFlag.target = self
         systemFlag.toolTip = "Evita suspensión del sistema (SOLO con AC conectado - no funciona en batería)"
         menu.addItem(systemFlag)
-        
-        let userFlag = NSMenuItem(title: "\u{2713} Declarar usuario activo (-u)", action: #selector(toggleUserActive), keyEquivalent: "")
+
+        let userFlag = NSMenuItem(title: "Declarar usuario activo (-u)", action: #selector(toggleUserActive), keyEquivalent: "")
         userFlag.target = self
         userFlag.toolTip = "Simula actividad del usuario (útil para demos/presentaciones)"
         menu.addItem(userFlag)
 
-        let lidSleepFlag = NSMenuItem(title: "\u{2713} Prevenir suspensión al cerrar tapa", action: #selector(toggleLidSleep), keyEquivalent: "")
+        let lidSleepFlag = NSMenuItem(title: "Prevenir suspensión al cerrar tapa", action: #selector(toggleLidSleep), keyEquivalent: "")
         lidSleepFlag.target = self
         lidSleepFlag.toolTip = "Evita que el Mac se suspenda al cerrar la tapa (requiere contraseña de admin)"
         menu.addItem(lidSleepFlag)
 
         menu.addItem(NSMenuItem.separator())
         
-        let alarmFlag = NSMenuItem(title: "\u{2713} Alarma de finalización", action: #selector(toggleAlarm), keyEquivalent: "")
+        let alarmFlag = NSMenuItem(title: "Alarma de finalización", action: #selector(toggleAlarm), keyEquivalent: "")
         alarmFlag.target = self
         alarmFlag.toolTip = "Suena al 10%, 5% y últimos 10 segundos del tiempo restante"
         menu.addItem(alarmFlag)
