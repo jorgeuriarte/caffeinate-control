@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var preventSystemSleep: Bool = false   // -s
     private var declareUserActive: Bool = false    // -u
     private var preventLidSleep: Bool = false       // Control pmset disablesleep
+    private var lidSleepWarningDismissed: Bool = false  // Don't show lid sleep warning again
     private var alarmEnabled: Bool = false          // Alarma de finalización
     
     // Variables para el sistema de alarmas
@@ -339,6 +340,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleLidSleep() {
+        // Show warning dialog if not dismissed before
+        if !lidSleepWarningDismissed && !preventLidSleep {
+            // Show warning only when enabling (not when disabling)
+            if !showLidSleepWarning() {
+                // User cancelled, don't toggle
+                return
+            }
+        }
+
         preventLidSleep.toggle()
         updateMenuStates()
         saveSettings()
@@ -394,6 +404,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         preventSystemSleep = defaults.bool(forKey: "preventSystemSleep")
         declareUserActive = defaults.bool(forKey: "declareUserActive")
         preventLidSleep = defaults.bool(forKey: "preventLidSleep")
+        lidSleepWarningDismissed = defaults.bool(forKey: "lidSleepWarningDismissed")
         alarmEnabled = defaults.bool(forKey: "alarmEnabled")
         selectedDuration = defaults.double(forKey: "selectedDuration")
         if selectedDuration == 0 { selectedDuration = 3600 } // Por defecto 1 hora
@@ -407,6 +418,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.set(preventSystemSleep, forKey: "preventSystemSleep")
         defaults.set(declareUserActive, forKey: "declareUserActive")
         defaults.set(preventLidSleep, forKey: "preventLidSleep")
+        defaults.set(lidSleepWarningDismissed, forKey: "lidSleepWarningDismissed")
         defaults.set(alarmEnabled, forKey: "alarmEnabled")
         defaults.set(selectedDuration, forKey: "selectedDuration")
     }
@@ -482,6 +494,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Pmset Control for Lid Sleep Prevention
+
+    private func showLidSleepWarning() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Prevención de suspensión al cerrar tapa"
+        alert.informativeText = "Activar o desactivar el modo sleep al cerrar la tapa requiere permisos de administrador, y se te solicitarán al iniciar el tiempo de actividad.\n\nNota: La configuración se resetea automáticamente al reiniciar la aplicación por seguridad."
+        alert.alertStyle = .informational
+
+        // Add buttons
+        alert.addButton(withTitle: "Continuar")
+        alert.addButton(withTitle: "Cancelar")
+
+        // Create "Don't show again" checkbox
+        let checkbox = NSButton(checkboxWithTitle: "No mostrar nunca más", target: nil, action: nil)
+        checkbox.state = .off
+        alert.accessoryView = checkbox
+
+        // Show alert and get response
+        let response = alert.runModal()
+
+        // Save checkbox state if user continued
+        if response == .alertFirstButtonReturn {
+            if checkbox.state == .on {
+                lidSleepWarningDismissed = true
+                saveSettings()
+            }
+            return true
+        }
+
+        return false
+    }
 
     private func checkPmsetStatus() -> Bool {
         // Check current pmset disablesleep status

@@ -22,8 +22,12 @@ build() {
     # Crear directorio de compilación
     mkdir -p "$BUILD_DIR"
     
-    # Compilar el código Swift
-    swiftc -o "$BUILD_DIR/$APP_NAME" main.swift -framework Cocoa -framework AVFoundation
+    # Compilar el código Swift con flags para app GUI
+    swiftc -o "$BUILD_DIR/$APP_NAME" main.swift \
+        -framework Cocoa \
+        -framework AVFoundation \
+        -import-objc-header /dev/null \
+        -suppress-warnings
     
     if [ $? -eq 0 ]; then
         echo "✅ Compilación exitosa!"

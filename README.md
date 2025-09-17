@@ -38,9 +38,17 @@ open build/CaffeinateControl.app
 
 ### ⚠️ Nota Importante sobre Prevención de Suspensión con Tapa Cerrada
 - Esta función utiliza `pmset disablesleep` que requiere privilegios de administrador
+- Al activarla por primera vez, verás un diálogo informativo (con opción "No mostrar nunca más")
 - Se te pedirá tu contraseña de administrador cuando actives esta opción
 - La configuración se **resetea automáticamente** al iniciar la app para evitar dejar el sistema permanentemente sin suspensión
 - La configuración también se desactiva automáticamente cuando detienes Caffeinate o cierras la aplicación
+
+#### Script de Emergencia
+Si por alguna razón necesitas resetear manualmente la configuración de pmset:
+```bash
+sudo ./reset_pmset.sh
+```
+Este script está incluido en el proyecto y resetea `pmset disablesleep` a su valor por defecto.
 
 ### Iconos de Estado
 - **☕️** (normal): Activo con contador de tiempo
