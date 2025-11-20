@@ -1,0 +1,232 @@
+#!/bin/bash
+
+# Professional Automated PKG Installer Builder for CaffeinateControl
+# Creates a beautiful, user-friendly installer that requires no terminal interaction
+# Just double-click and everything is done automatically
+
+set -e
+
+APP_NAME="CaffeinateControl"
+BUILD_DIR="build"
+VERSION=${1:-"1.0.0"}
+TEMP_DIR="/tmp/caffeinate-pro-installer-$$"
+
+echo "📦 Building professional automated installer..."
+echo ""
+
+cleanup() {
+    if [ -d "$TEMP_DIR" ]; then
+        rm -rf "$TEMP_DIR"
+    fi
+}
+
+trap cleanup EXIT
+
+# Check if app exists
+if [ ! -d "$BUILD_DIR/$APP_NAME.app" ]; then
+    echo "❌ App bundle not found at $BUILD_DIR/$APP_NAME.app"
+    echo "   Run: ./build.sh first"
+    exit 1
+fi
+
+# Create package structure
+echo "📁 Creating installer structure..."
+mkdir -p "$TEMP_DIR/root/Applications"
+mkdir -p "$TEMP_DIR/scripts"
+mkdir -p "$TEMP_DIR/resources"
+
+# Copy app
+cp -r "$BUILD_DIR/$APP_NAME.app" "$TEMP_DIR/root/Applications/"
+
+# Create preinstall script (validation)
+cat > "$TEMP_DIR/scripts/preinstall" << 'PRESCRIPT'
+#!/bin/bash
+# Validation before installation
+MACOS_VERSION=$(sw_vers -productVersion)
+REQUIRED_VERSION="10.15"
+
+if ! printf '%s\n' "$REQUIRED_VERSION" "$MACOS_VERSION" | sort -V | head -n 1 | grep -q "^$REQUIRED_VERSION"; then
+    echo "Error: macOS $REQUIRED_VERSION or later required (you have $MACOS_VERSION)"
+    exit 1
+fi
+
+exit 0
+PRESCRIPT
+
+chmod +x "$TEMP_DIR/scripts/preinstall"
+
+# Create postinstall script - THIS IS THE MAGIC
+# This runs AFTER the app is installed, completely silently
+cat > "$TEMP_DIR/scripts/postinstall" << 'POSTSCRIPT'
+#!/bin/bash
+
+APP_PATH="/Applications/CaffeinateControl.app"
+RESOURCES="$APP_PATH/Contents/Resources"
+HELPER_PATH="/usr/local/bin/caffeinatecontrol-pmset"
+HELPER_SCRIPT="$RESOURCES/install-pmset-helper.sh"
+
+# Make sure scripts are executable
+chmod +x "$RESOURCES/install-pmset-helper.sh" 2>/dev/null || true
+chmod +x "$RESOURCES/verify-pmset-setup.sh" 2>/dev/null || true
+chmod +x "$RESOURCES/reset-pmset-state.sh" 2>/dev/null || true
+
+# Silently install the helper if it doesn't exist
+# This avoids password prompts later
+if [ -f "$HELPER_SCRIPT" ] && [ ! -f "$HELPER_PATH" ]; then
+    # Create /usr/local/bin if it doesn't exist
+    mkdir -p /usr/local/bin 2>/dev/null || true
+
+    # Copy the helper script
+    cat "$HELPER_SCRIPT" > "$HELPER_PATH" 2>/dev/null || true
+
+    # Make it executable and owned by root
+    if [ -f "$HELPER_PATH" ]; then
+        chmod 755 "$HELPER_PATH" 2>/dev/null || true
+        chmod u+s "$HELPER_PATH" 2>/dev/null || true
+
+        # Log successful installation
+        logger -t CaffeinateControl "Helper script installed successfully"
+    fi
+fi
+
+# If we can't install the helper due to permissions, log it but don't fail
+# The app will still work - it just won't have the optimization
+
+exit 0
+POSTSCRIPT
+
+chmod +x "$TEMP_DIR/scripts/postinstall"
+
+# Create a beautiful welcome document (shows when installer opens)
+cat > "$TEMP_DIR/resources/Welcome.txt" << 'WELCOME'
+CaffeinateControl 2.0
+═══════════════════════════════════════════════════════════════
+
+¡Bienvenido a CaffeinateControl!
+
+Este instalador configurará CaffeinateControl en tu Mac.
+
+LO QUE SUCEDERÁ:
+• La aplicación se instalará en /Applications
+• Se configurarán los permisos correctamente
+• Se intentará instalar el helper para operación sin contraseña
+• ¡Todo automáticamente!
+
+TIEMPO ESTIMADO: 30 segundos
+
+Solo haz clic en "Continuar" y sigue los pasos.
+
+═══════════════════════════════════════════════════════════════
+WELCOME
+
+# Create Distribution file with custom graphics
+cat > "$TEMP_DIR/Distribution" << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>CaffeinateControl</title>
+    <organization>io.github.jorgeuriarte</organization>
+    <domains enable_localSystem="true"/>
+
+    <welcome file="Welcome.txt"/>
+
+    <installation-check script="pm_install_check()"/>
+    <volume-check script="pm_volume_check()"/>
+
+    <script>
+        function pm_volume_check() {
+            if(!(my.target.mountpoint.charAt(0) == '/')) {
+                return false;
+            }
+            return true;
+        }
+        function pm_install_check() {
+            if(system.version.ProductVersion &lt; "10.15") {
+                return false;
+            }
+            return true;
+        }
+    </script>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="caffeinate.install"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="caffeinate.install"
+            title="CaffeinateControl"
+            description="Instala CaffeinateControl en tu carpeta Applications">
+        <pkg-ref id="com.io.github.jorgeuriarte.caffeinate"/>
+    </choice>
+
+    <pkg-ref id="com.io.github.jorgeuriarte.caffeinate"
+             installKBytes="50000"
+             version="$VERSION"
+             auth="root">
+        #caffeinate.pkg
+    </pkg-ref>
+</installer-gui-script>
+EOF
+
+# Create the component package
+echo "🔧 Building component package..."
+pkgbuild \
+    --root "$TEMP_DIR/root" \
+    --scripts "$TEMP_DIR/scripts" \
+    --install-location "/" \
+    --identifier "com.io.github.jorgeuriarte.caffeinate" \
+    --version "$VERSION" \
+    --ownership preserve \
+    "$TEMP_DIR/caffeinate.pkg" \
+    || {
+        echo "❌ Failed to create component package"
+        exit 1
+    }
+
+# Create the final product installer
+echo "🔧 Creating professional installer..."
+productbuild \
+    --distribution "$TEMP_DIR/Distribution" \
+    --resources "$TEMP_DIR/resources" \
+    --package-path "$TEMP_DIR" \
+    "$BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg" \
+    || {
+        echo "❌ Failed to create installer"
+        exit 1
+    }
+
+if [ -f "$BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg" ]; then
+    echo "✅ Professional installer created successfully!"
+    echo ""
+    echo "📦 Location: $BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg"
+    echo "📊 Size: $(du -h "$BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg" | cut -f1)"
+
+    # Create checksum
+    CHECKSUM=$(shasum -a 256 "$BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg" | cut -d' ' -f1)
+    echo "🔐 SHA256: $CHECKSUM"
+    echo "$CHECKSUM  $APP_NAME-$VERSION-Installer.pkg" > "$BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg.sha256"
+
+    echo ""
+    echo "📖 HOW IT WORKS:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Usuario simplemente:"
+    echo "  1. Descarga: CaffeinateControl-$VERSION-Installer.pkg"
+    echo "  2. Doble click en el archivo"
+    echo "  3. Sigue el instalador (siguiente → siguiente → instalar)"
+    echo "  4. Ingresa contraseña si es solicitado"
+    echo "  5. ¡Listo! La app está en /Applications"
+    echo ""
+    echo "No requiere:"
+    echo "  ❌ Arrastrar carpetas"
+    echo "  ❌ Abrir terminal"
+    echo "  ❌ Ejecutar scripts"
+    echo "  ❌ Conocimiento técnico"
+    echo ""
+    echo "🚀 Para probar:"
+    echo "   open $BUILD_DIR/$APP_NAME-$VERSION-Installer.pkg"
+else
+    echo "❌ Failed to create installer"
+    exit 1
+fi
