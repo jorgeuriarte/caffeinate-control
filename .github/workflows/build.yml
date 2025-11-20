@@ -35,11 +35,22 @@ jobs:
       run: |
         chmod +x build.sh
         CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
-        
-    - name: 📦 Verify ZIP was created
+
+    - name: 📦 Create distribution installers
       run: |
-        ls -la build/
-        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip"
+        chmod +x build-dmg.sh
+        chmod +x claude_tools/build-macos-installer.sh
+        ./build-dmg.sh ${{ steps.get_version.outputs.VERSION }}
+        ./claude_tools/build-macos-installer.sh ${{ steps.get_version.outputs.VERSION }}
+
+    - name: 📋 Verify all distributions created
+      run: |
+        ls -lh build/
+        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg"
+        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg"
+        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg.sha256"
+        test -f "build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg.sha256"
+        echo "✅ All distributions created successfully"
         
     - name: 🧪 Test application
       run: |
@@ -54,7 +65,10 @@ jobs:
       with:
         name: CaffeinateControl-${{ steps.get_version.outputs.VERSION }}
         path: |
-          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg.sha256
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg.sha256
           build/CaffeinateControl.app
         retention-days: 30
 
@@ -77,48 +91,87 @@ jobs:
       run: |
         chmod +x build.sh
         CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
-        
+
+    - name: 📦 Create professional installers
+      run: |
+        chmod +x build-dmg.sh
+        chmod +x claude_tools/build-macos-installer.sh
+        ./build-dmg.sh ${{ steps.get_version.outputs.VERSION }}
+        ./claude_tools/build-macos-installer.sh ${{ steps.get_version.outputs.VERSION }}
+
     - name: 📋 Generate release notes
       id: release_notes
       run: |
         cat << 'EOF' > release_notes.md
         ## 🎉 CaffeinateControl v${{ steps.get_version.outputs.VERSION }}
-        
+
+        ### 🆕 Nuevas características
+        - ✅ Bugs de pmset corregidos - la pantalla ahora se apaga correctamente
+        - ✅ Helper script para operación sin contraseña
+        - ✅ Herramientas de diagnóstico y reset incluidas
+        - ✅ Instaladores profesionales (DMG + PKG)
+
         ### 📥 Instalación
-        1. Descarga `CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip`
-        2. Descomprime el archivo
-        3. Mueve `CaffeinateControl.app` a tu carpeta `/Applications/`
-        4. Ejecuta la aplicación
-        
+
+        **Opción 1: DMG (Recomendado para usuarios)**
+        1. Descarga `CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg`
+        2. Abre el archivo y arrastra la app a Applications
+        3. (Opcional) Instala el helper: `sudo ./install-pmset-helper.sh`
+
+        **Opción 2: PKG (Para empresas/MDM)**
+        1. Descarga `CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg`
+        2. Ejecuta el instalador
+        3. ¡Listo! El helper se instala automáticamente
+
+        **Opción 3: ZIP (Máxima simplicidad)**
+        1. Descarga el ZIP desde releases anteriores
+        2. Extrae y copia la app a Applications
+
         ### ✨ Características
         - 🎯 Control visual de caffeinate desde la barra de estado
         - ⏰ Múltiples duraciones: 15min, 30min, 1h, 2h
         - 🔧 Configuración avanzada de flags de caffeinate
         - 🔔 Sistema de alarmas personalizables
         - 💾 Persistencia de configuración
-        
+        - 🌙 Prevención de suspensión con tapa cerrada
+        - 🔐 Helper script opcional para operación sin contraseña
+
         ### 🔧 Requisitos del Sistema
         - macOS 10.15 (Catalina) o superior
         - Arquitectura Intel x64 o Apple Silicon
-        
+
+        ### 📖 Documentación
+        - INSTALLATION.md - Guía completa de instalación
+        - DISTRIBUTION.md - Información sobre distribuidores
+        - PRIVILEGIOS.md - Detalles técnicos
+
+        ### 🔐 Checksums SHA256
+
+        Verifica la integridad de tus descargas:
+        \`\`\`
+        $(cat build/*.sha256)
+        \`\`\`
+
+        Usa: \`shasum -a 256 -c filename.sha256\`
+
         ### 🐛 Problemas Conocidos
-        Si macOS muestra advertencias de seguridad, ve a `Preferencias del Sistema > Seguridad y Privacidad` y permite la ejecución de la aplicación.
-        
+        Si macOS muestra advertencias de seguridad, ve a \`Preferencias del Sistema > Seguridad y Privacidad\` y permite la ejecución de la aplicación.
+
         ---
-        
-        **Checksum SHA256:**
-        ```
-        $(shasum -a 256 build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip | cut -d' ' -f1)
-        ```
+
+        **¡Disfruta CaffeinateControl!** ☕️
         EOF
-        
+
     - name: 🚀 Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         name: "CaffeinateControl v${{ steps.get_version.outputs.VERSION }}"
         body_path: release_notes.md
         files: |
-          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.zip
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.dmg.sha256
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg
+          build/CaffeinateControl-${{ steps.get_version.outputs.VERSION }}.pkg.sha256
         draft: false
         prerelease: false
         token: ${{ secrets.GITHUB_TOKEN }}
