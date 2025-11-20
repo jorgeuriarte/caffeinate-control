@@ -531,14 +531,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkPmsetStatus() -> Bool {
-        // Note: disablesleep doesn't show in pmset -g output
-        // We check if sleep is set to 0 (never) which indicates disablesleep is active
+        // Better approach: Check if sleep is set to 0 (which indicates disablesleep is active)
+        // Note: macOS can have multiple sleep values (battery/AC), we check the first one
+        // When disablesleep is active, all sleep values become 0
+
         let process = Process()
         process.launchPath = "/usr/bin/pmset"
         process.arguments = ["-g"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
 
         do {
             try process.run()
@@ -546,36 +550,84 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
-                // When disablesleep is active, "sleep" value becomes 0
                 let lines = output.components(separatedBy: .newlines)
+
+                // Look for "sleep" settings and check if ANY is 0
+                // If sleep=0, disablesleep must be active
+                // We check all sleep values, not just the first one
+                var sleepValueIsZero = false
+
                 for line in lines {
                     let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                    // Look for "sleep" setting (not displaysleep or disksleep)
-                    if trimmedLine.hasPrefix("sleep ") && !trimmedLine.hasPrefix("sleepimage") {
+
+                    // Match "sleep" but not "displaysleep", "disksleep", or "sleepimage"
+                    if trimmedLine.hasPrefix("sleep ") &&
+                       !trimmedLine.hasPrefix("displaysleep") &&
+                       !trimmedLine.hasPrefix("disksleep") &&
+                       !trimmedLine.hasPrefix("sleepimage") {
+
                         let components = trimmedLine.components(separatedBy: .whitespaces)
                             .filter { !$0.isEmpty }
 
+                        // Sleep line format: "sleep    0" (plugged in) or "sleep   15" (battery)
+                        // We need to find if ANY sleep value is 0
                         if components.count >= 2 && components[0] == "sleep" {
-                            // If sleep is 0, disablesleep is effectively active
-                            return components[1] == "0"
+                            let sleepValue = components[1]
+                            print("DEBUG: Found sleep value: \(sleepValue)")
+
+                            if sleepValue == "0" {
+                                sleepValueIsZero = true
+                                print("Found sleep = 0, disablesleep is ACTIVE")
+                                break
+                            }
                         }
                     }
                 }
+
+                return sleepValueIsZero
             }
         } catch {
             print("Failed to check pmset status: \(error)")
         }
+
+        // If we can't read pmset, assume it's disabled (safe default)
         return false
     }
 
     private func enableLidSleepPrevention() {
-        // First check if already enabled
+        // First check if already enabled (to avoid unnecessary prompts)
         if checkPmsetStatus() {
             print("Lid sleep prevention already enabled")
             return
         }
 
-        // Create an AppleScript that requests admin privileges
+        print("Attempting to enable lid sleep prevention...")
+
+        // First, try using the helper script if it exists
+        let helperPath = "/usr/local/bin/caffeinatecontrol-pmset"
+        if FileManager.default.fileExists(atPath: helperPath) {
+            let process = Process()
+            process.launchPath = helperPath
+            process.arguments = ["1"]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+
+                if process.terminationStatus == 0 {
+                    print("Lid sleep prevention enabled successfully via helper")
+                    // Wait a moment for the change to take effect
+                    Thread.sleep(forTimeInterval: 0.5)
+                    return
+                } else {
+                    print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
+                }
+            } catch {
+                print("Could not execute helper script, falling back to AppleScript: \(error)")
+            }
+        }
+
+        // Fallback to AppleScript if helper is not available
         let appleScript = """
             do shell script "pmset -a disablesleep 1" with administrator privileges
         """
@@ -605,26 +657,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     saveSettings()
                 }
             } else {
-                print("Lid sleep prevention enabled successfully")
+                print("Lid sleep prevention enabled successfully via AppleScript")
                 // Wait a moment for the change to take effect
                 Thread.sleep(forTimeInterval: 0.5)
-                // Verify it was actually set
-                if !checkPmsetStatus() {
-                    print("Note: pmset command executed but immediate verification not available")
-                    print("This is normal - the setting has been applied")
-                }
             }
         }
     }
 
     private func disableLidSleepPrevention() {
-        // Only try to disable if it's currently enabled
-        if !checkPmsetStatus() {
-            print("Lid sleep prevention already disabled")
-            return
+        // IMPORTANT: Don't verify before disabling!
+        // If checkPmsetStatus() fails to detect that it's active, we would skip the disable
+        // Always attempt to disable, even if we think it's already disabled
+        // The pmset command is idempotent - running "disablesleep 0" when it's already 0 is harmless
+
+        print("Attempting to disable lid sleep prevention...")
+
+        // First, try using the helper script if it exists
+        let helperPath = "/usr/local/bin/caffeinatecontrol-pmset"
+        if FileManager.default.fileExists(atPath: helperPath) {
+            let process = Process()
+            process.launchPath = helperPath
+            process.arguments = ["0"]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+
+                if process.terminationStatus == 0 {
+                    print("Lid sleep prevention disabled successfully via helper")
+                    return
+                } else {
+                    print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
+                }
+            } catch {
+                print("Could not execute helper script, falling back to AppleScript: \(error)")
+            }
         }
 
-        // Create an AppleScript that requests admin privileges
+        // Fallback to AppleScript if helper is not available
         let appleScript = """
             do shell script "pmset -a disablesleep 0" with administrator privileges
         """
@@ -646,7 +716,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // We don't show error dialog on disable failures to avoid annoying the user
                 }
             } else {
-                print("Lid sleep prevention disabled successfully")
+                print("Lid sleep prevention disabled successfully via AppleScript")
             }
         }
     }

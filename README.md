@@ -25,6 +25,7 @@ Una aplicación de barra de estado para macOS que proporciona control visual y a
 1. Descarga la última versión desde [Releases](https://github.com/jorgeuriarte/caffeinate-control/releases)
 2. Descomprime y mueve `CaffeinateControl.app` a `/Applications/`
 3. Ejecuta la aplicación
+4. (Opcional) Instala el helper pmset para evitar prompts de contraseña (ver [INSTALLATION.md](INSTALLATION.md))
 
 ### Compilar desde código
 ```bash
@@ -33,6 +34,8 @@ cd caffeinate-control
 ./build.sh
 open build/CaffeinateControl.app
 ```
+
+**Ver [INSTALLATION.md](INSTALLATION.md) para instrucciones detalladas y configuración post-instalación.**
 
 ## 📖 Uso
 
@@ -43,12 +46,24 @@ open build/CaffeinateControl.app
 - La configuración se **resetea automáticamente** al iniciar la app para evitar dejar el sistema permanentemente sin suspensión
 - La configuración también se desactiva automáticamente cuando detienes Caffeinate o cierras la aplicación
 
-#### Script de Emergencia
-Si por alguna razón necesitas resetear manualmente la configuración de pmset:
+#### Optimizar con Helper pmset (Recomendado)
+Para **evitar prompts de contraseña** cada vez que cambias esta opción:
+
 ```bash
-sudo ./reset_pmset.sh
+cd /Applications/CaffeinateControl.app/Contents/Resources
+sudo ./install-pmset-helper.sh
+```
+
+Esto instala un script helper con privilegios elevados que permite cambios instantáneos sin solicitar contraseña. Ver [INSTALLATION.md](INSTALLATION.md) para más detalles.
+
+#### Script de Emergencia
+Si por alguna razón la pantalla no se apaga después de usar la app:
+```bash
+sudo ./reset-pmset-state.sh
 ```
 Este script está incluido en el proyecto y resetea `pmset disablesleep` a su valor por defecto.
+
+Ver [INSTALLATION.md](INSTALLATION.md) para solución de problemas completa.
 
 ### Iconos de Estado
 - **☕️** (normal): Activo con contador de tiempo
