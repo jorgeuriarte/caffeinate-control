@@ -41,11 +41,36 @@ fi
 echo "📁 Creating installer structure..."
 mkdir -p "$TEMP_DIR/root/Applications"
 mkdir -p "$TEMP_DIR/root/usr/local/bin"
+mkdir -p "$TEMP_DIR/root/Library/LaunchAgents"
 mkdir -p "$TEMP_DIR/scripts"
 mkdir -p "$TEMP_DIR/resources"
 
 # Copy app
 cp -r "$BUILD_DIR/$APP_NAME.app" "$TEMP_DIR/root/Applications/"
+
+# Create LaunchAgent for auto-start at login
+# This ensures the app runs at login to reset pmset if needed
+cat > "$TEMP_DIR/root/Library/LaunchAgents/com.jorgeuriarte.caffeinatecontrol.plist" << 'LAUNCHAGENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jorgeuriarte.caffeinatecontrol</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/open</string>
+        <string>-a</string>
+        <string>/Applications/CaffeinateControl.app</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>LaunchOnlyOnce</key>
+    <true/>
+</dict>
+</plist>
+LAUNCHAGENT
+echo "📦 Including LaunchAgent for auto-start at login..."
 
 # Copy helper binary if it exists
 if [ -f "$HELPER_BINARY" ]; then
@@ -117,6 +142,15 @@ fi
 # This ensures a clean state after installation
 /usr/bin/pmset -a disablesleep 0 2>/dev/null || true
 
+# Configure LaunchAgent permissions
+LAUNCHAGENT_PATH="/Library/LaunchAgents/com.jorgeuriarte.caffeinatecontrol.plist"
+if [ -f "$LAUNCHAGENT_PATH" ]; then
+    log_message "Configuring LaunchAgent for auto-start at login..."
+    chown root:wheel "$LAUNCHAGENT_PATH"
+    chmod 644 "$LAUNCHAGENT_PATH"
+    log_message "LaunchAgent configured - app will start automatically at login"
+fi
+
 log_message "CaffeinateControl installation completed successfully"
 
 exit 0
@@ -126,7 +160,7 @@ chmod +x "$TEMP_DIR/scripts/postinstall"
 
 # Create a beautiful welcome document (shows when installer opens)
 cat > "$TEMP_DIR/resources/Welcome.txt" << 'WELCOME'
-CaffeinateControl 2.0
+CaffeinateControl
 ═══════════════════════════════════════════════════════════════
 
 ¡Bienvenido a CaffeinateControl!
@@ -135,9 +169,15 @@ Este instalador configurará CaffeinateControl en tu Mac.
 
 LO QUE SUCEDERÁ:
 • La aplicación se instalará en /Applications
-• Se configurarán los permisos correctamente
-• Se intentará instalar el helper para operación sin contraseña
+• Se configurará para iniciar automáticamente al login
+• Se instalará el helper para operación sin contraseña
 • ¡Todo automáticamente!
+
+CARACTERÍSTICAS:
+• Control visual del comando caffeinate
+• Prevención de suspensión al cerrar la tapa
+• Alarmas de finalización
+• Inicio automático para protección del sistema
 
 TIEMPO ESTIMADO: 30 segundos
 

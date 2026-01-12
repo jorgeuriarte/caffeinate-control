@@ -26,7 +26,6 @@ build() {
     swiftc -o "$BUILD_DIR/$APP_NAME" main.swift \
         -framework Cocoa \
         -framework AVFoundation \
-        -import-objc-header /dev/null \
         -suppress-warnings
     
     if [ $? -eq 0 ]; then
