@@ -36,6 +36,14 @@ jobs:
         chmod +x build.sh
         CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
 
+    - name: 🔐 Build pmset helper (universal binary)
+      run: |
+        chmod +x helper/build-helper.sh
+        ./helper/build-helper.sh build
+        echo "✅ Helper binary built:"
+        file build/caffeinatecontrol-pmset
+        lipo -info build/caffeinatecontrol-pmset
+
     - name: 📦 Create professional installer
       run: |
         chmod +x claude_tools/build-professional-installer.sh
@@ -86,6 +94,14 @@ jobs:
         chmod +x build.sh
         CI=true ./build.sh ${{ steps.get_version.outputs.VERSION }}
 
+    - name: 🔐 Build pmset helper (universal binary)
+      run: |
+        chmod +x helper/build-helper.sh
+        ./helper/build-helper.sh build
+        echo "✅ Helper binary built:"
+        file build/caffeinatecontrol-pmset
+        lipo -info build/caffeinatecontrol-pmset
+
     - name: 📦 Create professional installer for release
       run: |
         chmod +x claude_tools/build-professional-installer.sh
@@ -99,7 +115,7 @@ jobs:
 
         ### 🆕 Nuevas características
         - ✅ Bugs de pmset corregidos - la pantalla ahora se apaga correctamente
-        - ✅ Helper script para operación sin contraseña
+        - ✅ Helper binario universal (Intel + Apple Silicon) para operación sin contraseña
         - ✅ Herramientas de diagnóstico y reset incluidas
         - ✅ Instalador profesional completamente automatizado
 

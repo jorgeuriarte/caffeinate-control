@@ -10,9 +10,17 @@ APP_NAME="CaffeinateControl"
 BUILD_DIR="build"
 VERSION=${1:-"1.0.0"}
 TEMP_DIR="/tmp/caffeinate-pro-installer-$$"
+HELPER_BINARY="$BUILD_DIR/caffeinatecontrol-pmset"
 
 echo "📦 Building professional automated installer..."
 echo ""
+
+# Build the helper binary if source exists and we're on macOS
+if [ -f "helper/caffeinatecontrol-pmset.c" ] && [[ "$(uname)" == "Darwin" ]]; then
+    echo "🔨 Building pmset helper binary..."
+    ./helper/build-helper.sh "$BUILD_DIR"
+    echo ""
+fi
 
 cleanup() {
     if [ -d "$TEMP_DIR" ]; then
@@ -32,11 +40,21 @@ fi
 # Create package structure
 echo "📁 Creating installer structure..."
 mkdir -p "$TEMP_DIR/root/Applications"
+mkdir -p "$TEMP_DIR/root/usr/local/bin"
 mkdir -p "$TEMP_DIR/scripts"
 mkdir -p "$TEMP_DIR/resources"
 
 # Copy app
 cp -r "$BUILD_DIR/$APP_NAME.app" "$TEMP_DIR/root/Applications/"
+
+# Copy helper binary if it exists
+if [ -f "$HELPER_BINARY" ]; then
+    echo "📦 Including pmset helper binary..."
+    cp "$HELPER_BINARY" "$TEMP_DIR/root/usr/local/bin/"
+else
+    echo "⚠️  Helper binary not found at $HELPER_BINARY"
+    echo "   The installer will work but won't have password-free pmset control"
+fi
 
 # Create preinstall script (validation)
 cat > "$TEMP_DIR/scripts/preinstall" << 'PRESCRIPT'
@@ -56,41 +74,50 @@ PRESCRIPT
 chmod +x "$TEMP_DIR/scripts/preinstall"
 
 # Create postinstall script - THIS IS THE MAGIC
-# This runs AFTER the app is installed, completely silently
+# This runs AFTER the app is installed, completely silently, AS ROOT
 cat > "$TEMP_DIR/scripts/postinstall" << 'POSTSCRIPT'
 #!/bin/bash
 
-APP_PATH="/Applications/CaffeinateControl.app"
-RESOURCES="$APP_PATH/Contents/Resources"
+# Post-installation script for CaffeinateControl
+# This runs as root during PKG installation
+
 HELPER_PATH="/usr/local/bin/caffeinatecontrol-pmset"
-HELPER_SCRIPT="$RESOURCES/install-pmset-helper.sh"
+LOG_TAG="CaffeinateControl-installer"
 
-# Make sure scripts are executable
-chmod +x "$RESOURCES/install-pmset-helper.sh" 2>/dev/null || true
-chmod +x "$RESOURCES/verify-pmset-setup.sh" 2>/dev/null || true
-chmod +x "$RESOURCES/reset-pmset-state.sh" 2>/dev/null || true
+log_message() {
+    logger -t "$LOG_TAG" "$1"
+    echo "$1"
+}
 
-# Silently install the helper if it doesn't exist
-# This avoids password prompts later
-if [ -f "$HELPER_SCRIPT" ] && [ ! -f "$HELPER_PATH" ]; then
-    # Create /usr/local/bin if it doesn't exist
-    mkdir -p /usr/local/bin 2>/dev/null || true
+# Configure the pmset helper binary with SUID permissions
+# The binary was already copied to /usr/local/bin by the installer
+if [ -f "$HELPER_PATH" ]; then
+    log_message "Configuring pmset helper binary..."
 
-    # Copy the helper script
-    cat "$HELPER_SCRIPT" > "$HELPER_PATH" 2>/dev/null || true
+    # Set ownership to root:wheel (required for SUID to work)
+    chown root:wheel "$HELPER_PATH"
 
-    # Make it executable and owned by root
-    if [ -f "$HELPER_PATH" ]; then
-        chmod 755 "$HELPER_PATH" 2>/dev/null || true
-        chmod u+s "$HELPER_PATH" 2>/dev/null || true
+    # Set permissions: rwsr-xr-x (4755)
+    # - Owner (root): read, write, execute + SUID
+    # - Group (wheel): read, execute
+    # - Others: read, execute
+    chmod 4755 "$HELPER_PATH"
 
-        # Log successful installation
-        logger -t CaffeinateControl "Helper script installed successfully"
+    # Verify SUID bit is set
+    if [ -u "$HELPER_PATH" ]; then
+        log_message "Helper binary configured with SUID - password-free operation enabled"
+    else
+        log_message "Warning: Could not set SUID bit on helper binary"
     fi
+else
+    log_message "Note: Helper binary not found - password prompts will be required for lid sleep prevention"
 fi
 
-# If we can't install the helper due to permissions, log it but don't fail
-# The app will still work - it just won't have the optimization
+# Reset any existing pmset disablesleep state for safety
+# This ensures a clean state after installation
+/usr/bin/pmset -a disablesleep 0 2>/dev/null || true
+
+log_message "CaffeinateControl installation completed successfully"
 
 exit 0
 POSTSCRIPT
