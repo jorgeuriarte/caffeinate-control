@@ -163,7 +163,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(stopItem)
         
         menu.addItem(NSMenuItem.separator())
-        
+
+        // Version info
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let versionItem = NSMenuItem(title: "v\(version) (\(build))", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
         let quitItem = NSMenuItem(title: "Salir", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -740,11 +747,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Always attempt to disable, even if we think it's already disabled
         // The pmset command is idempotent - running "disablesleep 0" when it's already 0 is harmless
 
-        print("Attempting to disable lid sleep prevention...")
+        print("=== DISABLING LID SLEEP PREVENTION ===")
+        os_log("Attempting to disable lid sleep prevention", log: OSLog.default, type: .info)
 
         // First, try using the helper script if it exists
         let helperPath = "/usr/local/bin/caffeinatecontrol-pmset"
+        print("Checking for helper at: \(helperPath)")
+
         if FileManager.default.fileExists(atPath: helperPath) {
+            print("Helper found, attempting to use it...")
+            os_log("Helper found at %{public}@, attempting disable", log: OSLog.default, type: .debug, helperPath)
+
             let process = Process()
             process.launchPath = helperPath
             process.arguments = ["0"]
@@ -755,18 +768,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
                 if process.terminationStatus == 0 {
                     print("Lid sleep prevention disabled successfully via helper")
+                    os_log("Lid sleep prevention disabled successfully via helper", log: OSLog.default, type: .info)
                     lidSleepPreventionActive = false
                     updateMenuStates()
                     return
                 } else {
                     print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
+                    os_log("Helper failed with status %d, falling back to AppleScript", log: OSLog.default, type: .error, process.terminationStatus)
                 }
             } catch {
                 print("Could not execute helper script, falling back to AppleScript: \(error)")
+                os_log("Could not execute helper: %{public}@", log: OSLog.default, type: .error, error.localizedDescription)
             }
+        } else {
+            print("Helper NOT found at \(helperPath), will use AppleScript")
+            os_log("Helper NOT found, will use AppleScript", log: OSLog.default, type: .debug)
         }
 
         // Fallback to AppleScript if helper is not available
+        print("Using AppleScript fallback...")
         let appleScript = """
             do shell script "pmset -a disablesleep 0" with administrator privileges
         """

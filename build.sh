@@ -40,10 +40,12 @@ build() {
         # Copiar el ejecutable
         cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
         
-        # Copiar Info.plist
+        # Copiar Info.plist y actualizar versión
         cp Info.plist "$APP_BUNDLE/Contents/"
-        
-        echo "📦 Aplicación creada en: $APP_BUNDLE"
+        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist"
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist"
+
+        echo "📦 Aplicación creada en: $APP_BUNDLE (v$VERSION)"
         echo "🚀 Para ejecutar: open $APP_BUNDLE"
         
         # Crear ZIP para distribución si estamos en CI
