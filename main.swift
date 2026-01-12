@@ -1,5 +1,6 @@
 import Cocoa
 import AVFoundation
+import os.log
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
@@ -634,16 +635,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First check if already enabled (to avoid unnecessary prompts)
         if checkPmsetStatus() {
             print("Lid sleep prevention already enabled")
+            os_log("Lid sleep prevention already enabled", log: OSLog.default, type: .info)
             lidSleepPreventionActive = true
             updateMenuStates()
             return
         }
 
         print("Attempting to enable lid sleep prevention...")
+        os_log("Attempting to enable lid sleep prevention", log: OSLog.default, type: .info)
 
         // First, try using the helper script if it exists
         let helperPath = "/usr/local/bin/caffeinatecontrol-pmset"
+        print("Checking if helper exists at: \(helperPath)")
+
         if FileManager.default.fileExists(atPath: helperPath) {
+            print("Helper found, attempting to use it...")
+            os_log("Helper found at %{public}@, attempting to use it", log: OSLog.default, type: .debug, helperPath)
+
             let process = Process()
             process.launchPath = helperPath
             process.arguments = ["1"]
@@ -654,6 +662,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
                 if process.terminationStatus == 0 {
                     print("Lid sleep prevention enabled successfully via helper")
+                    os_log("Lid sleep prevention enabled successfully via helper", log: OSLog.default, type: .info)
                     // Verify the change took effect
                     Thread.sleep(forTimeInterval: 0.5)
                     lidSleepPreventionActive = checkPmsetStatus()
@@ -667,10 +676,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     return
                 } else {
                     print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
+                    os_log("Helper script failed with status %d, falling back to AppleScript", log: OSLog.default, type: .error, process.terminationStatus)
                 }
             } catch {
                 print("Could not execute helper script, falling back to AppleScript: \(error)")
+                os_log("Could not execute helper script: %{public}@", log: OSLog.default, type: .error, error.localizedDescription)
             }
+        } else {
+            print("Helper NOT found at \(helperPath), will use AppleScript")
+            os_log("Helper NOT found at %{public}@, will use AppleScript", log: OSLog.default, type: .debug, helperPath)
         }
 
         // Fallback to AppleScript if helper is not available
@@ -784,7 +798,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func disableLidSleepPreventionSilently() {
-        // Silent version that doesn't prompt for password - used on startup
+        // Silent version that doesn't show auth dialog - used on startup cleanup
         // Try helper first, then direct pmset (which requires root)
 
         // First, try using the helper script if it exists (has setuid bit)
