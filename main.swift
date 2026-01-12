@@ -1,7 +1,7 @@
 import Cocoa
 import AVFoundation
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
     private var caffeinateProcess: Process?
@@ -16,7 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var preventDiskSleep: Bool = false     // -m
     private var preventSystemSleep: Bool = false   // -s
     private var declareUserActive: Bool = false    // -u
-    private var preventLidSleep: Bool = false       // Control pmset disablesleep
+    private var preventLidSleep: Bool = false       // User PREFERENCE for lid sleep prevention
+    private var lidSleepPreventionActive: Bool = false  // ACTUAL current state of pmset disablesleep
     private var lidSleepWarningDismissed: Bool = false  // Don't show lid sleep warning again
     private var alarmEnabled: Bool = false          // Alarma de finalización
     
@@ -28,17 +29,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadSettings()
-        // Always reset pmset on startup for safety
-        // This ensures we don't leave the system in a modified state
-        if checkPmsetStatus() {
+
+        // Check actual pmset status on startup
+        let pmsetIsActive = checkPmsetStatus()
+        lidSleepPreventionActive = pmsetIsActive
+
+        if pmsetIsActive {
+            // pmset is active from a previous session - try to reset it
             print("Found pmset disablesleep enabled on startup, will attempt to reset")
             disableLidSleepPreventionSilently()
-        } else if preventLidSleep {
-            // If pmset is not active but our setting says it should be, clear the setting
-            print("Clearing lid sleep prevention setting - pmset is not active")
-            preventLidSleep = false
-            saveSettings()
         }
+        // Note: We don't clear preventLidSleep here - it's the user's preference
+        // for what should happen when they START caffeinate next time
+
         setupMenu()
         setupStatusBar()
         updateStatusIcon()
@@ -47,8 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         stopCaffeinate()
-        // Ensure pmset is reset on termination
-        disableLidSleepPrevention()
+        // Ensure pmset is reset on termination (only if actually active)
+        if lidSleepPreventionActive {
+            disableLidSleepPrevention()
+        }
         saveSettings()
     }
     
@@ -86,7 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func setupMenu() {
         menu = NSMenu()
-        
+        menu.delegate = self  // For menuWillOpen to sync pmset state
+
         // Opciones de duración
         let duration15m = NSMenuItem(title: "Activar 15 minutos", action: #selector(start15Minutes), keyEquivalent: "")
         duration15m.target = self
@@ -162,8 +168,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
     }
     
-    // Ahora el menú se abre siempre con cualquier click
-    
+    // MARK: - NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        // Sync the actual pmset state before showing menu
+        // This ensures the checkbox reflects reality
+        let actualPmsetState = checkPmsetStatus()
+        if actualPmsetState != lidSleepPreventionActive {
+            print("DEBUG menuWillOpen: Syncing pmset state. Was \(lidSleepPreventionActive), actual is \(actualPmsetState)")
+            lidSleepPreventionActive = actualPmsetState
+        }
+        updateMenuStates()
+    }
+
+    // MARK: - Duration Actions
+
     @objc private func start15Minutes() {
         selectedDuration = 15 * 60
         startCaffeinateWithDuration(selectedDuration)
@@ -226,7 +245,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func stopCaffeinate() {
         guard isActive else { return }
-        
+
         caffeinateProcess?.terminate()
         caffeinateProcess = nil
         isActive = false
@@ -237,7 +256,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stopFinalCountdown()
 
         // Disable lid sleep prevention when stopping caffeinate
-        if preventLidSleep {
+        // Use lidSleepPreventionActive (actual state) not preventLidSleep (preference)
+        if lidSleepPreventionActive {
             disableLidSleepPrevention()
         }
     }
@@ -301,6 +321,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 statusItem.button?.toolTip = "Caffeinate activo - \(timeString) restante"
             } else {
+                // Timer expired naturally - clean up everything
                 isActive = false
                 caffeinateProcess = nil
                 self.endTime = nil
@@ -308,6 +329,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 updateStatusIcon()
                 stopTimer()
                 stopFinalCountdown()
+
+                // CRITICAL: Disable lid sleep prevention when timer expires
+                if lidSleepPreventionActive {
+                    disableLidSleepPrevention()
+                }
             }
         } else {
             statusItem.button?.toolTip = "Caffeinate inactivo - Click para activar (1h por defecto)"
@@ -376,7 +402,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func updateMenuStates() {
         let menuItems = menu.items
-        
+
         for (index, item) in menuItems.enumerated() {
             switch index {
             case 6: // Display sleep flag
@@ -389,8 +415,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 item.state = preventSystemSleep ? .on : .off
             case 10: // User active flag
                 item.state = declareUserActive ? .on : .off
-            case 11: // Lid sleep flag
-                item.state = preventLidSleep ? .on : .off
+            case 11: // Lid sleep flag - show ACTUAL state, not just preference
+                // When caffeinate is active: show real pmset state
+                // When inactive: show user preference (what will be activated next time)
+                if isActive {
+                    item.state = lidSleepPreventionActive ? .on : .off
+                    // Add visual indicator if pmset is actually active
+                    if lidSleepPreventionActive {
+                        item.title = "Prevenir suspensión al cerrar tapa (ACTIVO)"
+                    } else if preventLidSleep {
+                        item.title = "Prevenir suspensión al cerrar tapa (pendiente)"
+                    } else {
+                        item.title = "Prevenir suspensión al cerrar tapa"
+                    }
+                } else {
+                    item.state = preventLidSleep ? .on : .off
+                    // Show if pmset is still active (shouldn't be, but just in case)
+                    if lidSleepPreventionActive {
+                        item.title = "Prevenir suspensión al cerrar tapa (⚠️ activo)"
+                    } else {
+                        item.title = "Prevenir suspensión al cerrar tapa"
+                    }
+                }
             case 13: // Alarm flag
                 item.state = alarmEnabled ? .on : .off
             default:
@@ -531,9 +577,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkPmsetStatus() -> Bool {
-        // Better approach: Check if sleep is set to 0 (which indicates disablesleep is active)
-        // Note: macOS can have multiple sleep values (battery/AC), we check the first one
-        // When disablesleep is active, all sleep values become 0
+        // Check pmset -g to determine if disablesleep is active
+        // When disablesleep 1 is set, the "sleep" value becomes 0
 
         let process = Process()
         process.launchPath = "/usr/bin/pmset"
@@ -552,45 +597,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let output = String(data: data, encoding: .utf8) {
                 let lines = output.components(separatedBy: .newlines)
 
-                // Look for "sleep" settings and check if ANY is 0
-                // If sleep=0, disablesleep must be active
-                // We check all sleep values, not just the first one
-                var sleepValueIsZero = false
-
                 for line in lines {
                     let trimmedLine = line.trimmingCharacters(in: .whitespaces)
 
-                    // Match "sleep" but not "displaysleep", "disksleep", or "sleepimage"
-                    if trimmedLine.hasPrefix("sleep ") &&
-                       !trimmedLine.hasPrefix("displaysleep") &&
-                       !trimmedLine.hasPrefix("disksleep") &&
-                       !trimmedLine.hasPrefix("sleepimage") {
+                    // Use regex to match exactly "sleep" followed by whitespace and a number
+                    // This avoids matching "displaysleep", "disksleep", "sleepimage", etc.
+                    // Pattern: starts with "sleep" then whitespace(s) then a number
+                    if let range = trimmedLine.range(of: "^sleep\\s+", options: .regularExpression) {
+                        let afterSleep = trimmedLine[range.upperBound...]
+                        let valueStr = afterSleep.trimmingCharacters(in: .whitespaces)
+                            .components(separatedBy: .whitespaces).first ?? ""
 
-                        let components = trimmedLine.components(separatedBy: .whitespaces)
-                            .filter { !$0.isEmpty }
+                        print("DEBUG checkPmsetStatus: Found 'sleep' line, value='\(valueStr)'")
 
-                        // Sleep line format: "sleep    0" (plugged in) or "sleep   15" (battery)
-                        // We need to find if ANY sleep value is 0
-                        if components.count >= 2 && components[0] == "sleep" {
-                            let sleepValue = components[1]
-                            print("DEBUG: Found sleep value: \(sleepValue)")
-
-                            if sleepValue == "0" {
-                                sleepValueIsZero = true
-                                print("Found sleep = 0, disablesleep is ACTIVE")
-                                break
-                            }
+                        if valueStr == "0" {
+                            print("DEBUG checkPmsetStatus: sleep=0, disablesleep is ACTIVE")
+                            return true
+                        } else {
+                            print("DEBUG checkPmsetStatus: sleep=\(valueStr), disablesleep is NOT active")
+                            return false
                         }
                     }
                 }
 
-                return sleepValueIsZero
+                print("DEBUG checkPmsetStatus: No 'sleep' line found in pmset output")
             }
         } catch {
             print("Failed to check pmset status: \(error)")
         }
 
-        // If we can't read pmset, assume it's disabled (safe default)
+        // If we can't read pmset or find the sleep value, assume disabled (safe default)
         return false
     }
 
@@ -598,6 +634,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // First check if already enabled (to avoid unnecessary prompts)
         if checkPmsetStatus() {
             print("Lid sleep prevention already enabled")
+            lidSleepPreventionActive = true
+            updateMenuStates()
             return
         }
 
@@ -616,8 +654,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 if process.terminationStatus == 0 {
                     print("Lid sleep prevention enabled successfully via helper")
-                    // Wait a moment for the change to take effect
+                    // Verify the change took effect
                     Thread.sleep(forTimeInterval: 0.5)
+                    lidSleepPreventionActive = checkPmsetStatus()
+                    if lidSleepPreventionActive {
+                        print("Verified: pmset disablesleep is now active")
+                    } else {
+                        print("Warning: pmset command succeeded but verification failed")
+                        lidSleepPreventionActive = true  // Trust the exit code
+                    }
+                    updateMenuStates()
                     return
                 } else {
                     print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
@@ -645,6 +691,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     print("User cancelled admin authentication for lid sleep prevention")
                     // Reset the toggle since user cancelled
                     preventLidSleep = false
+                    lidSleepPreventionActive = false
                     updateMenuStates()
                     saveSettings()
                 } else {
@@ -653,13 +700,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                    details: errorMessage)
                     // Reset the toggle on error
                     preventLidSleep = false
+                    lidSleepPreventionActive = false
                     updateMenuStates()
                     saveSettings()
                 }
             } else {
                 print("Lid sleep prevention enabled successfully via AppleScript")
-                // Wait a moment for the change to take effect
+                // Verify the change took effect
                 Thread.sleep(forTimeInterval: 0.5)
+                lidSleepPreventionActive = checkPmsetStatus()
+                if lidSleepPreventionActive {
+                    print("Verified: pmset disablesleep is now active")
+                } else {
+                    print("Warning: AppleScript succeeded but verification failed")
+                    lidSleepPreventionActive = true  // Trust the AppleScript result
+                }
+                updateMenuStates()
             }
         }
     }
@@ -685,6 +741,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 if process.terminationStatus == 0 {
                     print("Lid sleep prevention disabled successfully via helper")
+                    lidSleepPreventionActive = false
+                    updateMenuStates()
                     return
                 } else {
                     print("Helper script failed (status: \(process.terminationStatus)), falling back to AppleScript")
@@ -709,21 +767,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Error -128 means user cancelled, which is ok for disable
                 if errorNumber == -128 {
                     print("User cancelled admin authentication for disabling lid sleep prevention")
+                    // User cancelled - pmset is still active, keep state as-is
                     // Don't show error for cancellation on disable
                 } else {
                     let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
                     print("Failed to disable lid sleep prevention: \(errorMessage)")
                     // We don't show error dialog on disable failures to avoid annoying the user
+                    // But pmset might still be active
                 }
             } else {
                 print("Lid sleep prevention disabled successfully via AppleScript")
+                lidSleepPreventionActive = false
+                updateMenuStates()
             }
         }
     }
 
     private func disableLidSleepPreventionSilently() {
         // Silent version that doesn't prompt for password - used on startup
-        // If we can't disable without password, we just log it and move on
+        // Try helper first, then direct pmset (which requires root)
+
+        // First, try using the helper script if it exists (has setuid bit)
+        let helperPath = "/usr/local/bin/caffeinatecontrol-pmset"
+        if FileManager.default.fileExists(atPath: helperPath) {
+            let process = Process()
+            process.launchPath = helperPath
+            process.arguments = ["0"]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+
+                if process.terminationStatus == 0 {
+                    print("Successfully reset pmset disablesleep on startup via helper")
+                    lidSleepPreventionActive = false
+                    // Don't change preventLidSleep - that's the user preference
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.updateMenuStates()
+                    }
+                    return
+                }
+            } catch {
+                print("Helper script not available: \(error)")
+            }
+        }
+
+        // Fallback: try direct pmset (will fail without root, but worth trying)
         let process = Process()
         process.launchPath = "/usr/bin/pmset"
         process.arguments = ["-a", "disablesleep", "0"]
@@ -733,29 +822,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             process.waitUntilExit()
             if process.terminationStatus == 0 {
                 print("Successfully reset pmset disablesleep on startup")
-                // Reset the UI state to match reality
-                preventLidSleep = false
-                // Update menu after a delay to ensure UI is ready
+                lidSleepPreventionActive = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     self?.updateMenuStates()
-                    self?.saveSettings()
                 }
             } else {
-                print("Note: Cannot reset pmset without admin privileges. Will prompt when user toggles the option.")
-                // If we couldn't reset, also clear the checkbox since it's not actually active
-                preventLidSleep = false
+                print("Note: Cannot reset pmset without admin privileges")
+                // pmset is still in whatever state it was - check actual status
+                lidSleepPreventionActive = checkPmsetStatus()
+                if lidSleepPreventionActive {
+                    print("Warning: pmset disablesleep is still active from previous session")
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     self?.updateMenuStates()
-                    self?.saveSettings()
                 }
             }
         } catch {
-            print("Note: Cannot reset pmset on startup without admin privileges")
-            // Clear the checkbox on error too
-            preventLidSleep = false
+            print("Note: Cannot reset pmset on startup: \(error)")
+            // Check actual status
+            lidSleepPreventionActive = checkPmsetStatus()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.updateMenuStates()
-                self?.saveSettings()
             }
         }
     }
